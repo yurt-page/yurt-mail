@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Mail Parse Sample</title>
+    <script>
+        function fetchEmail(envelopeUrl) {
+            fetch(envelopeUrl, {
+                method: 'GET',
+                credentials: 'same-origin'
+            }).then(response => {
+                return response.text()
+            }).then(data => {
+                let {headers, body} = parseEnvelope(data)
+                // console.log(headers)
+                let mailbox = document.getElementById('mailbox')
+
+                let msgBodyDiv = document.createElement('div')
+                msgBodyDiv.innerText = body
+                msgBodyDiv.className = "msgBodyDiv"
+                mailbox.appendChild(msgBodyDiv)
+            })
+        }
+
+        function listInbox() {
+            fetch("/dav/spool/", {
+                method: 'PROPFIND',
+                credentials: 'same-origin',
+                headers: {
+                    'depth': '1'
+                },
+            }).then(response => {
+                return response.text()
+            }).then(data => {
+                let oParser = new DOMParser();
+                // let oDOM = oParser.parseFromString(data, "application/xml");
+                let oDOM = oParser.parseFromString(data, "text/xml");
+                let filesNode = oDOM.documentElement.querySelectorAll('response > href')
+                console.log(filesNode)
+                for (let value of filesNode.values()) {
+                    let fileName = value.textContent
+                    if (fileName.endsWith(".content")) {
+                        console.log(fileName)
+                        fetchEmail(fileName)
+                    }
+                }
+            }).catch((error) => {
+                console.error('Error:', error)
+            })
+        }
+
+        function addHeader(header, headers) {
+            if (header === "") {
+                return
+            }
+            let headerValStart = header.indexOf(":")
+            let headerKey = header.substring(0, headerValStart)
+            let headerVal = header.substring(headerValStart + 1).trimStart()
+            headers[headerKey] = headerVal
+        }
+
+        /**
+         * @param {string} msgBody
+         */
+        function parseEnvelope(msgBody) {
+            let headers = {}
+            let lineStart = 0
+            let header = ""
+            for (let i = 0; i < msgBody.length; i++) {
+                let lineEnd = msgBody.indexOf("\r\n", lineStart)
+                if (lineEnd === -1) {
+                    break
+                }
+                let line = msgBody.substring(lineStart, lineEnd)
+                lineStart = lineEnd + 2 // skip CRLF
+                if (line === "") {
+                    addHeader(header, headers);
+                    break
+                }
+                let lineTrim = line.trimStart()
+                if (lineTrim.length < line.length) {
+                    header += " " + lineTrim
+                } else {
+                    addHeader(header, headers);
+                    header = line
+                }
+            }
+            let body = msgBody.substring(lineStart)
+            return {headers, body};
+        }
+
+        function parseMail() {
+            let msgBody = document.getElementById("msgBody").value
+            let {headers, body} = parseEnvelope(msgBody)
+            console.log(headers)
+            console.log(body)
+            document.getElementById("from").innerText = headers["From"]
+            document.getElementById("to").innerText = headers["To"]
+        }
+    </script>
+    <style>
+        .msgBodyDiv {
+            border: aqua 2px solid;
+        }
+    </style>
+</head>
+<body>
+<div>
+    <button onclick="listInbox();">listInbox</button>
+</div>
+<div id="mailbox">
+</div>
+
+<details>
+    <div>
+        <button onclick="parseMail();">parse</button>
+        <span id="from"></span>
+        <span id="to"></span>
+    </div>
+<textarea id="msgBody" style="width: 100%" rows="250">
+</textarea>
+</details>
+</body>
+</html>
